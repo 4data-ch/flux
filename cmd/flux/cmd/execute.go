@@ -27,7 +27,7 @@ func init() {
 func execute(cmd *cobra.Command, args []string) error {
 	deps := flux.NewDefaultDependencies()
 	deps.Deps.FilesystemService = filesystem.SystemFS
-	ctx := context.Background()
+	ctx := deps.Inject(context.Background())
 	r := repl.New(ctx, deps, querier{})
 	if err := r.Input(args[0]); err != nil {
 		return fmt.Errorf("failed to execute query: %v", err)
