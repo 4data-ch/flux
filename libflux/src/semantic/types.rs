@@ -119,11 +119,35 @@ impl fmt::Display for MonoType {
 // Tvar stands for type variable.
 // A type variable holds an unknown type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Tvar(i64);
+pub struct Tvar(pub i64);
 
 impl fmt::Display for Tvar {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "t{}", self.0)
+    }
+}
+
+// Fresher is used to get fresh type variables.
+pub trait Fresher {
+    fn get(&mut self) -> Tvar;
+}
+
+// IncrementingFresher returns a new type variable with incrementing id.
+pub struct IncrementingFresher {
+    count: u64,
+}
+
+impl IncrementingFresher {
+    pub fn new() -> IncrementingFresher {
+        IncrementingFresher { count: 0 }
+    }
+}
+
+impl Fresher for IncrementingFresher {
+    fn get(&mut self) -> Tvar {
+        let id = self.count as i64;
+        self.count += 1;
+        Tvar(id)
     }
 }
 
