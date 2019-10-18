@@ -1,4 +1,9 @@
-use std::{cmp, collections::HashMap, fmt};
+use crate::semantic::sub::{Subst, Substitutable};
+use std::{
+    cmp,
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 // PolyType represents a generic parametrized type.
 //
