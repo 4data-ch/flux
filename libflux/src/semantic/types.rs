@@ -91,6 +91,28 @@ impl fmt::Display for Const {
     }
 }
 
+// Unification equates two types by producing a substitution whereby
+// the types are equal after application of the substitution.
+//
+// More formally, s = unify(x,y) => s(x) = s(y) .
+//
+// Note here that unification also takes a set of constrained type
+// variables and produces a possibly updated set of constraints along
+// with the substitution equating the two types.
+//
+trait Unifiable {
+    fn unify(self, with: Self, cons: Const) -> Result<(Subst, Const), UnifyError>;
+}
+
+#[derive(Debug)]
+struct UnifyError(MonoType, MonoType);
+
+impl fmt::Display for UnifyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "cannot unify {} with {}", self.0, self.1)
+    }
+}
+
 // Kind represents a class or family of types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -170,6 +192,113 @@ impl Substitutable for MonoType {
     }
 }
 
+impl Unifiable for MonoType {
+    fn unify(self, with: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        match self {
+            MonoType::Bool(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::Bool(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::Int(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::Int(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::Uint(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::Uint(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::Float(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::Float(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::String(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::String(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::Duration(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::Duration(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::Time(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::Time(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::Regexp(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(self, cons)
+                } else if let MonoType::Regexp(s) = with {
+                    t.unify(s, cons)
+                } else {
+                    Err(UnifyError(self, with))
+                }
+            }
+            MonoType::Arr(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(MonoType::Arr(t), cons)
+                } else if let MonoType::Arr(arr) = with {
+                    t.unify(*arr, cons)
+                } else {
+                    Err(UnifyError(MonoType::Arr(t), with))
+                }
+            }
+            MonoType::Row(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(MonoType::Row(t), cons)
+                } else if let MonoType::Row(obj) = with {
+                    t.unify(*obj, cons)
+                } else {
+                    Err(UnifyError(MonoType::Row(t), with))
+                }
+            }
+            MonoType::Fun(t) => {
+                if let MonoType::Var(tv) = with {
+                    tv.unify(MonoType::Fun(t), cons)
+                } else if let MonoType::Fun(fun) = with {
+                    t.unify(*fun, cons)
+                } else {
+                    Err(UnifyError(MonoType::Fun(t), with))
+                }
+            }
+            MonoType::Var(t) => t.unify(with, cons),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bool;
 
@@ -182,6 +311,12 @@ impl fmt::Display for Bool {
 impl Substitutable for Bool {
     fn apply(self, _: &Subst) -> Self {
         self
+    }
+}
+
+impl Unifiable for Bool {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
     }
 }
 
@@ -200,6 +335,12 @@ impl Substitutable for Int {
     }
 }
 
+impl Unifiable for Int {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Uint;
 
@@ -212,6 +353,12 @@ impl fmt::Display for Uint {
 impl Substitutable for Uint {
     fn apply(self, _: &Subst) -> Self {
         self
+    }
+}
+
+impl Unifiable for Uint {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
     }
 }
 
@@ -230,6 +377,12 @@ impl Substitutable for Float {
     }
 }
 
+impl Unifiable for Float {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Str;
 
@@ -242,6 +395,12 @@ impl fmt::Display for Str {
 impl Substitutable for Str {
     fn apply(self, _: &Subst) -> Self {
         self
+    }
+}
+
+impl Unifiable for Str {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
     }
 }
 
@@ -260,6 +419,12 @@ impl Substitutable for Duration {
     }
 }
 
+impl Unifiable for Duration {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Time;
 
@@ -275,6 +440,12 @@ impl Substitutable for Time {
     }
 }
 
+impl Unifiable for Time {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Regexp;
 
@@ -287,6 +458,12 @@ impl fmt::Display for Regexp {
 impl Substitutable for Regexp {
     fn apply(self, _: &Subst) -> Self {
         self
+    }
+}
+
+impl Unifiable for Regexp {
+    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        Ok((Subst::empty(), cons))
     }
 }
 
@@ -308,6 +485,10 @@ impl Tvar {
             None => MonoType::Var(self),
         }
     }
+
+    fn unify(self, _: MonoType, _: Const) -> Result<(Subst, Const), UnifyError> {
+        unimplemented!();
+    }
 }
 
 // Array is a homogeneous list type
@@ -323,6 +504,12 @@ impl fmt::Display for Array {
 impl Substitutable for Array {
     fn apply(self, sub: &Subst) -> Self {
         Array(self.0.apply(sub))
+    }
+}
+
+impl Unifiable for Array {
+    fn unify(self, with: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+        self.0.unify(with.0, cons)
     }
 }
 
@@ -366,6 +553,12 @@ impl Substitutable for Row {
                 tail: tail.apply(sub),
             },
         }
+    }
+}
+
+impl Unifiable for Row {
+    fn unify(self, _: Self, _: Const) -> Result<(Subst, Const), UnifyError> {
+        unimplemented!();
     }
 }
 
@@ -510,6 +703,12 @@ impl Substitutable for Function {
             },
             retn: self.retn.apply(sub),
         }
+    }
+}
+
+impl Unifiable for Function {
+    fn unify(self, _: Self, _: Const) -> Result<(Subst, Const), UnifyError> {
+        unimplemented!();
     }
 }
 
