@@ -11,8 +11,9 @@
 #    * All recursive Makefiles must support the targets: generate and clean.
 #
 
-SUBDIRS = ast/asttest internal/scanner stdlib libflux
+SHELL := /bin/bash
 
+GO_TAGS=libflux
 GO_ARGS=-tags '$(GO_TAGS)'
 
 # Test vars can be used by all recursive Makefiles
@@ -23,29 +24,59 @@ export GO_TEST_FLAGS=
 # Do not add GO111MODULE=on to the call to go generate so it doesn't pollute the environment.
 export GO_GENERATE=go generate $(GO_ARGS)
 export GO_VET=env GO111MODULE=on go vet $(GO_ARGS)
+export CARGO=cargo
 
-# List of utilities to build as part of the build process
-UTILS := \
-	bin/$(GOOS)/cmpgen
+define go_deps
+	$(shell env GO111MODULE=on go list -f "{{range .GoFiles}} {{$$.Dir}}/{{.}}{{end}}" $(1))
+endef
 
-generate: $(UTILS) $(SUBDIRS)
+default: build
 
-rust: build
+STDLIB_SOURCES = $(shell find . -name '*.flux')
+
+GENERATED_TARGETS = \
+	ast/asttest/cmpopts.go \
+	internal/scanner/scanner.gen.go \
+	stdlib/packages.go
+
+generate: $(GENERATED_TARGETS)
+
+.SECONDEXPANSION:
+ast/asttest/cmpopts.go: ast/ast.go ast/asttest/gen.go $$(call go_deps,./internal/cmd/cmpgen)
+	$(GO_GENERATE) ./ast/asttest
+
+stdlib/packages.go: $(STDLIB_SOURCES)
+	$(GO_GENERATE) ./stdlib
+
+internal/scanner/unicode.rl: internal/scanner/unicode2ragel.rb
+	ruby unicode2ragel.rb -e utf8 -o internal/scanner/unicode.rl
+internal/scanner/scanner.gen.go: internal/scanner/gen.go internal/scanner/scanner.rl internal/scanner/unicode.rl
+	$(GO_GENERATE) ./internal/scanner
+
+libflux: libflux/target/debug/libflux.a
+
+libflux/target/debug/libflux.a:
+	@echo "cd libflux && $(CARGO) build"
+	@cd libflux && $(CARGO) build && if [[ "$$GOOS" == "darwin" ]]; then \
+		sed -i '' -e "s@${CURDIR}/@@g" -e "s@debug/debug@debug@g" target/debug/libflux.d; \
+	else \
+		sed -i -e "s@${CURDIR}/@@g" -e "s@debug/debug@debug@g" target/debug/libflux.d; \
+	fi
+-include libflux/target/debug/libflux.d
 
 build: libflux
+	$(GO_BUILD) ./...
 
-$(SUBDIRS): $(UTILS)
-	$(MAKE) -C $@ $(MAKECMDGOALS)
-
-clean: $(SUBDIRS)
+clean:
 	rm -rf bin
+	cd libflux; $(CARGO) clean
 
-bin/$(GOOS)/cmpgen: ./ast/asttest/cmpgen/main.go
-	$(GO_BUILD) -o $@ ./ast/asttest/cmpgen
+cleangenerate:
+	rm -f $(GENERATED_FILES)
 
 fmt: $(SOURCES_NO_VENDOR)
 	go fmt ./...
-	cd libflux; cargo fmt
+	cd libflux; $(CARGO) fmt
 
 checkfmt:
 	./etc/checkfmt.sh
@@ -63,16 +94,21 @@ staticcheck:
 	GO111MODULE=on go mod vendor # staticcheck looks in vendor for dependencies.
 	GO111MODULE=on go run honnef.co/go/tools/cmd/staticcheck ./...
 
-test: libflux
+test: test-go test-rust
+
+test-go: libflux
 	$(GO_TEST) $(GO_TEST_FLAGS) ./...
 
-test-race:
+test-rust:
+	cd libflux && $(CARGO) test
+
+test-race: libflux
 	$(GO_TEST) -race -count=1 ./...
 
-test-bench:
+test-bench: libflux
 	$(GO_TEST) -run=NONE -bench=. -benchtime=1x ./...
 
-vet:
+vet: libflux
 	$(GO_VET) ./...
 
 bench:
@@ -85,6 +121,10 @@ release:
 
 .PHONY: generate \
 	clean \
+	cleangenerate \
+	build \
+	default \
+	libflux \
 	fmt \
 	checkfmt \
 	tidy \
@@ -92,11 +132,12 @@ release:
 	checkgenerate \
 	staticcheck \
 	test \
+	test-go \
+	test-rust \
 	test-race \
 	test-bench \
 	vet \
 	bench \
 	checkfmt \
-	release \
-	$(SUBDIRS)
+	release
 
