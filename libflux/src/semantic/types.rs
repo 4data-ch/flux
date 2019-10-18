@@ -83,14 +83,14 @@ impl fmt::Display for Kind {
 // MonoType represents a specific named type
 #[derive(Debug, Clone, PartialEq)]
 pub enum MonoType {
-    Bool,
-    Int,
-    Uint,
-    Float,
-    String,
-    Duration,
-    Time,
-    Regexp,
+    Bool(Bool),
+    Int(Int),
+    Uint(Uint),
+    Float(Float),
+    String(Str),
+    Duration(Duration),
+    Time(Time),
+    Regexp(Regexp),
     Var(Tvar),
     Arr(Box<Array>),
     Row(Box<Row>),
@@ -100,14 +100,14 @@ pub enum MonoType {
 impl fmt::Display for MonoType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            MonoType::Bool => f.write_str("bool"),
-            MonoType::Int => f.write_str("int"),
-            MonoType::Uint => f.write_str("uint"),
-            MonoType::Float => f.write_str("float"),
-            MonoType::String => f.write_str("string"),
-            MonoType::Duration => f.write_str("duration"),
-            MonoType::Time => f.write_str("time"),
-            MonoType::Regexp => f.write_str("regexp"),
+            MonoType::Bool(t) => t.fmt(f),
+            MonoType::Int(t) => t.fmt(f),
+            MonoType::Uint(t) => t.fmt(f),
+            MonoType::Float(t) => t.fmt(f),
+            MonoType::String(t) => t.fmt(f),
+            MonoType::Duration(t) => t.fmt(f),
+            MonoType::Time(t) => t.fmt(f),
+            MonoType::Regexp(t) => t.fmt(f),
             MonoType::Var(var) => var.fmt(f),
             MonoType::Arr(arr) => arr.fmt(f),
             MonoType::Row(obj) => obj.fmt(f),
@@ -116,10 +116,82 @@ impl fmt::Display for MonoType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bool;
+
+impl fmt::Display for Bool {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("bool")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Int;
+
+impl fmt::Display for Int {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("int")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Uint;
+
+impl fmt::Display for Uint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("uint")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Float;
+
+impl fmt::Display for Float {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("float")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Str;
+
+impl fmt::Display for Str {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("string")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Duration;
+
+impl fmt::Display for Duration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("duration")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Time;
+
+impl fmt::Display for Time {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("time")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Regexp;
+
+impl fmt::Display for Regexp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("regexp")
+    }
+}
+
 // Tvar stands for type variable.
 // A type variable holds an unknown type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Tvar(i64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Tvar(pub i64);
 
 impl fmt::Display for Tvar {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -129,7 +201,7 @@ impl fmt::Display for Tvar {
 
 // Array is a homogeneous list type
 #[derive(Debug, Clone, PartialEq)]
-pub struct Array(MonoType);
+pub struct Array(pub MonoType);
 
 impl fmt::Display for Array {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -149,19 +221,14 @@ impl fmt::Display for Array {
 #[derive(Debug, Clone)]
 pub enum Row {
     Empty,
-    Var(Tvar),
-    Extension { head: Property, tail: Box<Row> },
+    Extension { head: Property, tail: MonoType },
 }
 
 impl fmt::Display for Row {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Err(e) = f.write_str("{") {
-            return Err(e);
-        }
-        if let Err(e) = self.display(f) {
-            return Err(e);
-        }
-        return f.write_str("}");
+        f.write_str("{")?;
+        self.display(f)?;
+        f.write_str("}")
     }
 }
 
@@ -174,26 +241,17 @@ impl cmp::PartialEq for Row {
 }
 
 impl Row {
-    // Records are implemented as a sequence or list of extenstions.
-    // This function extends a record by adding a new property to the
-    // head of the list.
-    fn extend(self, head: Property) -> Self {
-        Row::Extension {
-            head: head,
-            tail: Box::new(self),
-        }
-    }
-
     // Display a row type in flattened format
     fn display(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Row::Empty => f.write_str("{}"),
-            Row::Var(tv) => write!(f, "{}", tv),
-            Row::Extension { head: h, tail: t } => {
-                if let Err(e) = write!(f, "{} | ", h) {
-                    return Err(e);
+            Row::Extension { head, tail } => {
+                write!(f, "{} | ", head)?;
+                match tail {
+                    MonoType::Var(tvr) => write!(f, "{}", tvr),
+                    MonoType::Row(obj) => obj.display(f),
+                    _ => Err(fmt::Error),
                 }
-                t.display(f)
             }
         }
     }
@@ -202,10 +260,13 @@ impl Row {
     fn flatten(&self, props: &mut HashMap<String, MonoType>) -> Option<Tvar> {
         match self {
             Row::Empty => None,
-            Row::Var(tv) => Some(*tv),
-            Row::Extension { head: h, tail: t } => {
-                props.insert(h.k.clone(), h.v.clone());
-                t.flatten(props)
+            Row::Extension { head, tail } => {
+                props.insert(head.k.clone(), head.v.clone());
+                match tail {
+                    MonoType::Row(obj) => obj.flatten(props),
+                    MonoType::Var(tvr) => Some(*tvr),
+                    _ => panic!("tail of row must be either a row variable or another row"),
+                }
             }
         }
     }
@@ -240,25 +301,30 @@ pub struct Function {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut req: Vec<Property> = Vec::new();
-        for (k, v) in &self.req {
-            req.push(Property {
-                k: k.clone(),
+        let mut req: Vec<_> = self
+            .req
+            .iter()
+            .map(|(k, v)| Property {
+                k: k.to_string(),
                 v: v.clone(),
-            });
-        }
-        req.sort_unstable_by(|a, b| a.k.cmp(&b.k));
+            })
+            .collect();
 
-        let mut opt: Vec<Property> = Vec::new();
-        for (k, v) in &self.opt {
-            opt.push(Property {
+        req.sort_by(|a, b| a.k.cmp(&b.k));
+
+        let mut opt: Vec<_> = self
+            .opt
+            .iter()
+            .map(|(k, v)| Property {
                 k: String::from("?") + &k,
                 v: v.clone(),
-            });
-        }
-        opt.sort_unstable_by(|a, b| a.k.cmp(&b.k));
+            })
+            .collect();
 
-        let mut args: Vec<Property> = Vec::new();
+        opt.sort_by(|a, b| a.k.cmp(&b.k));
+
+        let mut args = Vec::with_capacity(req.len() + opt.len());
+
         if let Some(pipe) = &self.pipe {
             if pipe.k == "<-" {
                 args.push(pipe.clone());
@@ -272,11 +338,12 @@ impl fmt::Display for Function {
 
         args.append(&mut req);
         args.append(&mut opt);
+
         write!(
             f,
             "({}) -> {}",
             DisplayList {
-                values: &args,
+                values: args,
                 delim: ", "
             },
             self.retn
@@ -300,12 +367,12 @@ impl fmt::Display for BoundTvar {
 
 // DisplayList is a list of elements each of which can be displayed
 #[derive(Debug, Clone, PartialEq)]
-struct DisplayList<'a, T> {
-    values: &'a Vec<T>,
+struct DisplayList<T> {
+    values: Vec<T>,
     delim: &'static str,
 }
 
-impl<'a, T: fmt::Display> fmt::Display for DisplayList<'a, T> {
+impl<T: fmt::Display> fmt::Display for DisplayList<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.values.is_empty() {
             return Ok(());
@@ -313,9 +380,7 @@ impl<'a, T: fmt::Display> fmt::Display for DisplayList<'a, T> {
         let size = self.values.len();
         let list = &self.values[..size - 1];
         for v in list {
-            if let Err(e) = write!(f, "{}{}", v, self.delim) {
-                return Err(e);
-            }
+            write!(f, "{}{}", v, self.delim)?;
         }
         self.values[size - 1].fmt(f)
     }
@@ -348,74 +413,82 @@ mod tests {
 
     #[test]
     fn display_type_bool() {
-        assert_eq!("bool", MonoType::Bool.to_string());
+        assert_eq!("bool", Bool.to_string());
     }
     #[test]
     fn display_type_int() {
-        assert_eq!("int", MonoType::Int.to_string());
+        assert_eq!("int", Int.to_string());
     }
     #[test]
     fn display_type_uint() {
-        assert_eq!("uint", MonoType::Uint.to_string());
+        assert_eq!("uint", Uint.to_string());
     }
     #[test]
     fn display_type_float() {
-        assert_eq!("float", MonoType::Float.to_string());
+        assert_eq!("float", Float.to_string());
     }
     #[test]
     fn display_type_string() {
-        assert_eq!("string", MonoType::String.to_string());
+        assert_eq!("string", Str.to_string());
     }
     #[test]
     fn display_type_duration() {
-        assert_eq!("duration", MonoType::Duration.to_string());
+        assert_eq!("duration", Duration.to_string());
     }
     #[test]
     fn display_type_time() {
-        assert_eq!("time", MonoType::Time.to_string());
+        assert_eq!("time", Time.to_string());
     }
     #[test]
     fn display_type_regexp() {
-        assert_eq!("regexp", MonoType::Regexp.to_string());
+        assert_eq!("regexp", Regexp.to_string());
     }
     #[test]
     fn display_type_tvar() {
-        assert_eq!("t10", MonoType::Var(Tvar(10)).to_string());
+        assert_eq!("t10", Tvar(10).to_string());
     }
     #[test]
     fn display_type_array() {
         assert_eq!(
             "[int]",
-            MonoType::Arr(Box::new(Array(MonoType::Int))).to_string()
+            MonoType::Arr(Box::new(Array(MonoType::Int(Int)))).to_string()
         );
     }
     #[test]
     fn display_type_row() {
         assert_eq!(
             "{a:int | b:string | t0}",
-            Row::Var(Tvar(0))
-                .extend(Property {
-                    k: String::from("b"),
-                    v: MonoType::String,
-                })
-                .extend(Property {
+            Row::Extension {
+                head: Property {
                     k: String::from("a"),
-                    v: MonoType::Int,
-                })
-                .to_string()
+                    v: MonoType::Int(Int),
+                },
+                tail: MonoType::Row(Box::new(Row::Extension {
+                    head: Property {
+                        k: String::from("b"),
+                        v: MonoType::String(Str),
+                    },
+                    tail: MonoType::Var(Tvar(0)),
+                })),
+            }
+            .to_string()
         );
         assert_eq!(
             "{a:int | b:string | {}}",
-            Row::Empty
-                .extend(Property {
-                    k: String::from("b"),
-                    v: MonoType::String,
-                })
-                .extend(Property {
+            Row::Extension {
+                head: Property {
                     k: String::from("a"),
-                    v: MonoType::Int,
-                })
-                .to_string()
+                    v: MonoType::Int(Int),
+                },
+                tail: MonoType::Row(Box::new(Row::Extension {
+                    head: Property {
+                        k: String::from("b"),
+                        v: MonoType::String(Str),
+                    },
+                    tail: MonoType::Row(Box::new(Row::Empty)),
+                })),
+            }
+            .to_string()
         );
     }
     #[test]
@@ -426,7 +499,7 @@ mod tests {
                 req: HashMap::new(),
                 opt: HashMap::new(),
                 pipe: None,
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -437,9 +510,9 @@ mod tests {
                 opt: HashMap::new(),
                 pipe: Some(Property {
                     k: String::from("<-"),
-                    v: MonoType::Int,
+                    v: MonoType::Int(Int),
                 }),
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -450,9 +523,9 @@ mod tests {
                 opt: HashMap::new(),
                 pipe: Some(Property {
                     k: String::from("a"),
-                    v: MonoType::Int,
+                    v: MonoType::Int(Int),
                 }),
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -460,15 +533,15 @@ mod tests {
             "(<-:int, a:int, b:int) -> int",
             Function {
                 req: maplit::hashmap! {
-                    String::from("a") => MonoType::Int,
-                    String::from("b") => MonoType::Int,
+                    String::from("a") => MonoType::Int(Int),
+                    String::from("b") => MonoType::Int(Int),
                 },
                 opt: HashMap::new(),
                 pipe: Some(Property {
                     k: String::from("<-"),
-                    v: MonoType::Int,
+                    v: MonoType::Int(Int),
                 }),
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -477,14 +550,14 @@ mod tests {
             Function {
                 req: HashMap::new(),
                 opt: maplit::hashmap! {
-                    String::from("a") => MonoType::Int,
-                    String::from("b") => MonoType::Int,
+                    String::from("a") => MonoType::Int(Int),
+                    String::from("b") => MonoType::Int(Int),
                 },
                 pipe: Some(Property {
                     k: String::from("<-"),
-                    v: MonoType::Int,
+                    v: MonoType::Int(Int),
                 }),
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -492,18 +565,18 @@ mod tests {
             "(<-:int, a:int, b:int, ?c:int, ?d:int) -> int",
             Function {
                 req: maplit::hashmap! {
-                    String::from("a") => MonoType::Int,
-                    String::from("b") => MonoType::Int,
+                    String::from("a") => MonoType::Int(Int),
+                    String::from("b") => MonoType::Int(Int),
                 },
                 opt: maplit::hashmap! {
-                    String::from("c") => MonoType::Int,
-                    String::from("d") => MonoType::Int,
+                    String::from("c") => MonoType::Int(Int),
+                    String::from("d") => MonoType::Int(Int),
                 },
                 pipe: Some(Property {
                     k: String::from("<-"),
-                    v: MonoType::Int,
+                    v: MonoType::Int(Int),
                 }),
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -511,13 +584,13 @@ mod tests {
             "(a:int, ?b:bool) -> int",
             Function {
                 req: maplit::hashmap! {
-                    String::from("a") => MonoType::Int,
+                    String::from("a") => MonoType::Int(Int),
                 },
                 opt: maplit::hashmap! {
-                    String::from("b") => MonoType::Bool,
+                    String::from("b") => MonoType::Bool(Bool),
                 },
                 pipe: None,
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -525,17 +598,17 @@ mod tests {
             "(<-a:int, b:int, c:int, ?d:bool) -> int",
             Function {
                 req: maplit::hashmap! {
-                    String::from("b") => MonoType::Int,
-                    String::from("c") => MonoType::Int,
+                    String::from("b") => MonoType::Int(Int),
+                    String::from("c") => MonoType::Int(Int),
                 },
                 opt: maplit::hashmap! {
-                    String::from("d") => MonoType::Bool,
+                    String::from("d") => MonoType::Bool(Bool),
                 },
                 pipe: Some(Property {
                     k: String::from("a"),
-                    v: MonoType::Int,
+                    v: MonoType::Int(Int),
                 }),
-                retn: MonoType::Int,
+                retn: MonoType::Int(Int),
             }
             .to_string()
         );
@@ -548,7 +621,7 @@ mod tests {
             PolyType {
                 free: Vec::new(),
                 bnds: None,
-                expr: MonoType::Int,
+                expr: MonoType::Int(Int),
             }
             .to_string(),
         );
@@ -580,17 +653,19 @@ mod tests {
                     },
                     opt: HashMap::new(),
                     pipe: None,
-                    retn: MonoType::Row(Box::new(
-                        Row::Empty
-                            .extend(Property {
+                    retn: MonoType::Row(Box::new(Row::Extension {
+                        head: Property {
+                            k: String::from("x"),
+                            v: MonoType::Var(Tvar(0)),
+                        },
+                        tail: MonoType::Row(Box::new(Row::Extension {
+                            head: Property {
                                 k: String::from("y"),
                                 v: MonoType::Var(Tvar(1)),
-                            })
-                            .extend(Property {
-                                k: String::from("x"),
-                                v: MonoType::Var(Tvar(0)),
-                            })
-                    )),
+                            },
+                            tail: MonoType::Row(Box::new(Row::Empty)),
+                        })),
+                    })),
                 })),
             }
             .to_string(),
@@ -629,9 +704,13 @@ mod tests {
                     },
                     opt: HashMap::new(),
                     pipe: None,
-                    retn: MonoType::Row(Box::new(
-                        Row::Empty
-                            .extend(Property {
+                    retn: MonoType::Row(Box::new(Row::Extension {
+                        head: Property {
+                            k: String::from("x"),
+                            v: MonoType::Var(Tvar(0)),
+                        },
+                        tail: MonoType::Row(Box::new(Row::Extension {
+                            head: Property {
                                 k: String::from("y"),
                                 v: MonoType::Var(Tvar(1)),
                             })
@@ -651,55 +730,63 @@ mod tests {
     fn compare_records() {
         assert_eq!(
             // {a:int | b:string | t0}
-            MonoType::Row(Box::new(
-                Row::Var(Tvar(0))
-                    .extend(Property {
+            MonoType::Row(Box::new(Row::Extension {
+                head: Property {
+                    k: String::from("a"),
+                    v: MonoType::Int(Int),
+                },
+                tail: MonoType::Row(Box::new(Row::Extension {
+                    head: Property {
                         k: String::from("b"),
-                        v: MonoType::String,
-                    })
-                    .extend(Property {
-                        k: String::from("a"),
-                        v: MonoType::Int,
-                    })
-            )),
+                        v: MonoType::String(Str),
+                    },
+                    tail: MonoType::Var(Tvar(0)),
+                })),
+            })),
             // {b:string | a:int | t0}
-            MonoType::Row(Box::new(
-                Row::Var(Tvar(0))
-                    .extend(Property {
+            MonoType::Row(Box::new(Row::Extension {
+                head: Property {
+                    k: String::from("b"),
+                    v: MonoType::String(Str),
+                },
+                tail: MonoType::Row(Box::new(Row::Extension {
+                    head: Property {
                         k: String::from("a"),
-                        v: MonoType::Int,
-                    })
-                    .extend(Property {
-                        k: String::from("b"),
-                        v: MonoType::String,
-                    })
-            )),
+                        v: MonoType::Int(Int),
+                    },
+                    tail: MonoType::Var(Tvar(0)),
+                })),
+            })),
         );
         assert_ne!(
             // {a:int | b:string | {}}
-            MonoType::Row(Box::new(
-                Row::Empty
-                    .extend(Property {
+            MonoType::Row(Box::new(Row::Extension {
+                head: Property {
+                    k: String::from("a"),
+                    v: MonoType::Int(Int),
+                },
+                tail: MonoType::Row(Box::new(Row::Extension {
+                    head: Property {
                         k: String::from("b"),
-                        v: MonoType::String,
-                    })
-                    .extend(Property {
-                        k: String::from("a"),
-                        v: MonoType::Int,
-                    })
-            )),
+                        v: MonoType::String(Str),
+                    },
+                    tail: MonoType::Row(Box::new(Row::Empty)),
+                })),
+            })),
             // {b:int | a:int | {}}
-            MonoType::Row(Box::new(
-                Row::Empty
-                    .extend(Property {
+            MonoType::Row(Box::new(Row::Extension {
+                head: Property {
+                    k: String::from("b"),
+                    v: MonoType::Int(Int),
+                },
+                tail: MonoType::Row(Box::new(Row::Extension {
+                    head: Property {
                         k: String::from("a"),
-                        v: MonoType::Int,
-                    })
-                    .extend(Property {
-                        k: String::from("b"),
-                        v: MonoType::Int,
-                    })
-            )),
+                        v: MonoType::Int(Int),
+                    },
+                    tail: MonoType::Row(Box::new(Row::Empty)),
+                })),
+            })),
         );
     }
 }
