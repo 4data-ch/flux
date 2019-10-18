@@ -1,4 +1,5 @@
 pub mod walk;
+mod fbast;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -1035,3 +1036,6 @@ pub struct DateTimeLit {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod fbast_tests;
