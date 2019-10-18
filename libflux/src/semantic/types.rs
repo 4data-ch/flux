@@ -14,42 +14,28 @@ use std::{cmp, collections::HashMap, fmt};
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolyType {
     pub free: Vec<Tvar>,
-    pub bnds: Option<HashMap<Tvar, Kind>>,
+    pub bnds: Option<Const>,
     pub expr: MonoType,
 }
 
 impl fmt::Display for PolyType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.bnds {
-            Some(bnds) => {
-                let mut bounds = Vec::new();
-                for tv in &self.free {
-                    if let Some(kind) = bnds.get(tv) {
-                        bounds.push(BoundTvar {
-                            tv: *tv,
-                            kind: *kind,
-                        })
-                    }
-                }
-                write!(
-                    f,
-                    "forall [{}] where {} {}",
-                    DisplayList {
-                        values: &self.free,
-                        delim: ", "
-                    },
-                    DisplayList {
-                        values: &bounds,
-                        delim: ", "
-                    },
-                    self.expr,
-                )
-            }
+            Some(bounds) => write!(
+                f,
+                "forall [{}] where {} {}",
+                DisplayList {
+                    values: self.free.to_owned(),
+                    delim: ", "
+                },
+                bounds,
+                self.expr,
+            ),
             None => write!(
                 f,
                 "forall [{}] {}",
                 DisplayList {
-                    values: &self.free,
+                    values: self.free.to_owned(),
                     delim: ", "
                 },
                 self.expr
@@ -58,13 +44,61 @@ impl fmt::Display for PolyType {
     }
 }
 
+// Kind constraints on type variables.
+//
+// Ex. forall [t0] where t0:Comparable + Equatable (x:t0, y:t0) -> bool
+//                       ^_______________________^
+//
+#[derive(Debug, Clone, PartialEq)]
+pub struct Const {
+    pub kinds: HashMap<Tvar, HashSet<Kind>>,
+}
+
+impl fmt::Display for Const {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut cons: Vec<_> = self.kinds.iter().collect();
+        cons.sort_by(|a, b| a.0.cmp(b.0));
+
+        let mut first = true;
+        for (tv, kinds) in cons {
+            let mut k: Vec<_> = kinds.iter().collect();
+            k.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+
+            if first {
+                write!(
+                    f,
+                    "{}:{}",
+                    tv,
+                    DisplayList {
+                        values: k,
+                        delim: " + ",
+                    }
+                )?;
+                first = false;
+            } else {
+                write!(
+                    f,
+                    ", {}:{}",
+                    tv,
+                    DisplayList {
+                        values: k,
+                        delim: " + ",
+                    }
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
 // Kind represents a class or family of types
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Addable,
     Subtractable,
     Divisible,
     Comparable,
+    Equatable,
     Nullable,
 }
 
@@ -75,6 +109,7 @@ impl fmt::Display for Kind {
             Kind::Subtractable => f.write_str("Subtractable"),
             Kind::Divisible => f.write_str("Divisible"),
             Kind::Comparable => f.write_str("Comparable"),
+            Kind::Equatable => f.write_str("Equatable"),
             Kind::Nullable => f.write_str("Nullable"),
         }
     }
@@ -520,6 +555,10 @@ mod tests {
         assert!(Kind::Comparable.to_string() == "Comparable");
     }
     #[test]
+    fn display_kind_equatable() {
+        assert!(Kind::Equatable.to_string() == "Equatable");
+    }
+    #[test]
     fn display_kind_nullable() {
         assert!(Kind::Nullable.to_string() == "Nullable");
     }
@@ -787,8 +826,8 @@ mod tests {
             "forall [t0] where t0:Addable (a:t0, b:t0) -> t0",
             PolyType {
                 free: vec![Tvar(0)],
-                bnds: Some(maplit::hashmap! {
-                    Tvar(0) => Kind::Addable,
+                bnds: Some(Const {
+                    kinds: maplit::hashmap! {Tvar(0) => maplit::hashset![Kind::Addable]}
                 }),
                 expr: MonoType::Fun(Box::new(Function {
                     req: maplit::hashmap! {
@@ -806,9 +845,11 @@ mod tests {
             "forall [t0, t1] where t0:Addable, t1:Divisible (x:t0, y:t1) -> {x:t0 | y:t1 | {}}",
             PolyType {
                 free: vec![Tvar(0), Tvar(1)],
-                bnds: Some(maplit::hashmap! {
-                    Tvar(0) => Kind::Addable,
-                    Tvar(1) => Kind::Divisible,
+                bnds: Some(Const {
+                    kinds: maplit::hashmap! {
+                        Tvar(0) => maplit::hashset![Kind::Addable],
+                        Tvar(1) => maplit::hashset![Kind::Divisible],
+                    }
                 }),
                 expr: MonoType::Fun(Box::new(Function {
                     req: maplit::hashmap! {
@@ -826,12 +867,44 @@ mod tests {
                             head: Property {
                                 k: String::from("y"),
                                 v: MonoType::Var(Tvar(1)),
-                            })
-                            .extend(Property {
-                                k: String::from("x"),
-                                v: MonoType::Var(Tvar(0)),
-                            })
-                    )),
+                            },
+                            tail: MonoType::Row(Box::new(Row::Empty)),
+                        })),
+                    })),
+                })),
+            }
+            .to_string(),
+        );
+        assert_eq!(
+            "forall [t0, t1] where t0:Comparable + Equatable, t1:Addable + Divisible (x:t0, y:t1) -> {x:t0 | y:t1 | {}}",
+            PolyType {
+                free: vec![Tvar(0), Tvar(1)],
+                bnds: Some(Const {
+                    kinds: maplit::hashmap! {
+                        Tvar(0) => maplit::hashset![Kind::Comparable, Kind::Equatable],
+                        Tvar(1) => maplit::hashset![Kind::Addable, Kind::Divisible],
+                    }
+                }),
+                expr: MonoType::Fun(Box::new(Function {
+                    req: maplit::hashmap! {
+                        String::from("x") => MonoType::Var(Tvar(0)),
+                        String::from("y") => MonoType::Var(Tvar(1)),
+                    },
+                    opt: HashMap::new(),
+                    pipe: None,
+                    retn: MonoType::Row(Box::new(Row::Extension {
+                        head: Property {
+                            k: String::from("x"),
+                            v: MonoType::Var(Tvar(0)),
+                        },
+                        tail: MonoType::Row(Box::new(Row::Extension {
+                            head: Property {
+                                k: String::from("y"),
+                                v: MonoType::Var(Tvar(1)),
+                            },
+                            tail: MonoType::Row(Box::new(Row::Empty)),
+                        })),
+                    })),
                 })),
             }
             .to_string(),
