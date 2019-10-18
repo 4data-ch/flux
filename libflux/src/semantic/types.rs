@@ -113,6 +113,25 @@ impl fmt::Display for UnifyError {
     }
 }
 
+// Types may be constrained with Kinds.
+//
+// Unlike unification which asserts an equality constraint on two
+// types, a kind constraint asserts the containment of a type within
+// a type class or family.
+//
+trait Constrainable {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError>;
+}
+
+#[derive(Debug)]
+struct KindError(MonoType, Kind);
+
+impl fmt::Display for KindError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} is not of kind {}", self.0, self.1)
+    }
+}
+
 // Kind represents a class or family of types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -299,6 +318,25 @@ impl Unifiable for MonoType {
     }
 }
 
+impl Constrainable for MonoType {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match self {
+            MonoType::Bool(t) => t.constrain(with, cons),
+            MonoType::Int(t) => t.constrain(with, cons),
+            MonoType::Uint(t) => t.constrain(with, cons),
+            MonoType::Float(t) => t.constrain(with, cons),
+            MonoType::String(t) => t.constrain(with, cons),
+            MonoType::Duration(t) => t.constrain(with, cons),
+            MonoType::Time(t) => t.constrain(with, cons),
+            MonoType::Regexp(t) => t.constrain(with, cons),
+            MonoType::Var(tvr) => tvr.constrain(with, cons),
+            MonoType::Arr(arr) => arr.constrain(with, cons),
+            MonoType::Row(obj) => obj.constrain(with, cons),
+            MonoType::Fun(fun) => fun.constrain(with, cons),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bool;
 
@@ -317,6 +355,15 @@ impl Substitutable for Bool {
 impl Unifiable for Bool {
     fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
         Ok((Subst::empty(), cons))
+    }
+}
+
+impl Constrainable for Bool {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match with {
+            Kind::Equatable | Kind::Nullable => Ok((Subst::empty(), cons)),
+            _ => Err(KindError(MonoType::Bool(self), with)),
+        }
     }
 }
 
@@ -341,6 +388,19 @@ impl Unifiable for Int {
     }
 }
 
+impl Constrainable for Int {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match with {
+            Kind::Addable
+            | Kind::Subtractable
+            | Kind::Divisible
+            | Kind::Comparable
+            | Kind::Equatable
+            | Kind::Nullable => Ok((Subst::empty(), cons)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Uint;
 
@@ -359,6 +419,19 @@ impl Substitutable for Uint {
 impl Unifiable for Uint {
     fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
         Ok((Subst::empty(), cons))
+    }
+}
+
+impl Constrainable for Uint {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match with {
+            Kind::Addable
+            | Kind::Divisible
+            | Kind::Comparable
+            | Kind::Equatable
+            | Kind::Nullable => Ok((Subst::empty(), cons)),
+            _ => Err(KindError(MonoType::Uint(self), with)),
+        }
     }
 }
 
@@ -383,6 +456,19 @@ impl Unifiable for Float {
     }
 }
 
+impl Constrainable for Float {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match with {
+            Kind::Addable
+            | Kind::Subtractable
+            | Kind::Divisible
+            | Kind::Comparable
+            | Kind::Equatable
+            | Kind::Nullable => Ok((Subst::empty(), cons)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Str;
 
@@ -401,6 +487,17 @@ impl Substitutable for Str {
 impl Unifiable for Str {
     fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
         Ok((Subst::empty(), cons))
+    }
+}
+
+impl Constrainable for Str {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match with {
+            Kind::Addable | Kind::Comparable | Kind::Equatable | Kind::Nullable => {
+                Ok((Subst::empty(), cons))
+            }
+            _ => Err(KindError(MonoType::String(self), with)),
+        }
     }
 }
 
@@ -425,6 +522,15 @@ impl Unifiable for Duration {
     }
 }
 
+impl Constrainable for Duration {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match with {
+            Kind::Comparable | Kind::Equatable | Kind::Nullable => Ok((Subst::empty(), cons)),
+            _ => Err(KindError(MonoType::Duration(self), with)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Time;
 
@@ -443,6 +549,15 @@ impl Substitutable for Time {
 impl Unifiable for Time {
     fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
         Ok((Subst::empty(), cons))
+    }
+}
+
+impl Constrainable for Time {
+    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+        match with {
+            Kind::Comparable | Kind::Equatable | Kind::Nullable => Ok((Subst::empty(), cons)),
+            _ => Err(KindError(MonoType::Time(self), with)),
+        }
     }
 }
 
@@ -467,6 +582,12 @@ impl Unifiable for Regexp {
     }
 }
 
+impl Constrainable for Regexp {
+    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
+        Err(KindError(MonoType::Regexp(self), with))
+    }
+}
+
 // Tvar stands for type variable.
 // A type variable holds an unknown type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -475,6 +596,12 @@ pub struct Tvar(pub i64);
 impl fmt::Display for Tvar {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "t{}", self.0)
+    }
+}
+
+impl Constrainable for Tvar {
+    fn constrain(self, _: Kind, _: Const) -> Result<(Subst, Const), KindError> {
+        unimplemented!();
     }
 }
 
@@ -510,6 +637,12 @@ impl Substitutable for Array {
 impl Unifiable for Array {
     fn unify(self, with: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
         self.0.unify(with.0, cons)
+    }
+}
+
+impl Constrainable for Box<Array> {
+    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
+        Err(KindError(MonoType::Arr(self), with))
     }
 }
 
@@ -559,6 +692,12 @@ impl Substitutable for Row {
 impl Unifiable for Row {
     fn unify(self, _: Self, _: Const) -> Result<(Subst, Const), UnifyError> {
         unimplemented!();
+    }
+}
+
+impl Constrainable for Box<Row> {
+    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
+        Err(KindError(MonoType::Row(self), with))
     }
 }
 
@@ -709,6 +848,12 @@ impl Substitutable for Function {
 impl Unifiable for Function {
     fn unify(self, _: Self, _: Const) -> Result<(Subst, Const), UnifyError> {
         unimplemented!();
+    }
+}
+
+impl Constrainable for Box<Function> {
+    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
+        Err(KindError(MonoType::Fun(self), with))
     }
 }
 
