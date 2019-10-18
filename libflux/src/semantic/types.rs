@@ -116,12 +116,37 @@ impl fmt::Display for MonoType {
     }
 }
 
+impl Substitutable for MonoType {
+    fn apply(self, sub: &Subst) -> Self {
+        match self {
+            MonoType::Bool(t) => MonoType::Bool(t.apply(sub)),
+            MonoType::Int(t) => MonoType::Int(t.apply(sub)),
+            MonoType::Uint(t) => MonoType::Uint(t.apply(sub)),
+            MonoType::Float(t) => MonoType::Float(t.apply(sub)),
+            MonoType::String(t) => MonoType::String(t.apply(sub)),
+            MonoType::Duration(t) => MonoType::Duration(t.apply(sub)),
+            MonoType::Time(t) => MonoType::Time(t.apply(sub)),
+            MonoType::Regexp(t) => MonoType::Regexp(t.apply(sub)),
+            MonoType::Var(tvr) => tvr.apply(sub),
+            MonoType::Arr(arr) => MonoType::Arr(Box::new(arr.apply(sub))),
+            MonoType::Row(obj) => MonoType::Row(Box::new(obj.apply(sub))),
+            MonoType::Fun(fun) => MonoType::Fun(Box::new(fun.apply(sub))),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bool;
 
 impl fmt::Display for Bool {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("bool")
+    }
+}
+
+impl Substitutable for Bool {
+    fn apply(self, _: &Subst) -> Self {
+        self
     }
 }
 
@@ -134,12 +159,24 @@ impl fmt::Display for Int {
     }
 }
 
+impl Substitutable for Int {
+    fn apply(self, _: &Subst) -> Self {
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Uint;
 
 impl fmt::Display for Uint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("uint")
+    }
+}
+
+impl Substitutable for Uint {
+    fn apply(self, _: &Subst) -> Self {
+        self
     }
 }
 
@@ -152,12 +189,24 @@ impl fmt::Display for Float {
     }
 }
 
+impl Substitutable for Float {
+    fn apply(self, _: &Subst) -> Self {
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Str;
 
 impl fmt::Display for Str {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("string")
+    }
+}
+
+impl Substitutable for Str {
+    fn apply(self, _: &Subst) -> Self {
+        self
     }
 }
 
@@ -170,6 +219,12 @@ impl fmt::Display for Duration {
     }
 }
 
+impl Substitutable for Duration {
+    fn apply(self, _: &Subst) -> Self {
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Time;
 
@@ -179,12 +234,24 @@ impl fmt::Display for Time {
     }
 }
 
+impl Substitutable for Time {
+    fn apply(self, _: &Subst) -> Self {
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Regexp;
 
 impl fmt::Display for Regexp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("regexp")
+    }
+}
+
+impl Substitutable for Regexp {
+    fn apply(self, _: &Subst) -> Self {
+        self
     }
 }
 
@@ -199,6 +266,15 @@ impl fmt::Display for Tvar {
     }
 }
 
+impl Tvar {
+    fn apply(self, sub: &Subst) -> MonoType {
+        match sub.lookup(self) {
+            Some(t) => t.clone(),
+            None => MonoType::Var(self),
+        }
+    }
+}
+
 // Array is a homogeneous list type
 #[derive(Debug, Clone, PartialEq)]
 pub struct Array(pub MonoType);
@@ -206,6 +282,12 @@ pub struct Array(pub MonoType);
 impl fmt::Display for Array {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[{}]", self.0)
+    }
+}
+
+impl Substitutable for Array {
+    fn apply(self, sub: &Subst) -> Self {
+        Array(self.0.apply(sub))
     }
 }
 
@@ -237,6 +319,18 @@ impl cmp::PartialEq for Row {
         let mut l = HashMap::new();
         let mut r = HashMap::new();
         self.flatten(&mut l) == other.flatten(&mut r) && l == r
+    }
+}
+
+impl Substitutable for Row {
+    fn apply(self, sub: &Subst) -> Self {
+        match self {
+            Row::Empty => Row::Empty,
+            Row::Extension { head, tail } => Row::Extension {
+                head: head.apply(sub),
+                tail: tail.apply(sub),
+            },
+        }
     }
 }
 
@@ -282,6 +376,15 @@ pub struct Property {
 impl fmt::Display for Property {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.k, self.v)
+    }
+}
+
+impl Substitutable for Property {
+    fn apply(self, sub: &Subst) -> Self {
+        Property {
+            k: self.k,
+            v: self.v.apply(sub),
+        }
     }
 }
 
@@ -351,17 +454,27 @@ impl fmt::Display for Function {
     }
 }
 
-// BoundTvar represents a constrained type variable.
-// Used solely for displaying the generic constraints of a polytype.
-#[derive(Debug)]
-struct BoundTvar {
-    tv: Tvar,
-    kind: Kind,
+impl Substitutable for HashMap<String, MonoType> {
+    fn apply(self, sub: &Subst) -> Self {
+        let mut args = self;
+        for (_, v) in &mut args {
+            *v = v.clone().apply(sub);
+        }
+        args
+    }
 }
 
-impl fmt::Display for BoundTvar {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.tv, self.kind)
+impl Substitutable for Function {
+    fn apply(self, sub: &Subst) -> Self {
+        Function {
+            req: self.req.apply(sub),
+            opt: self.opt.apply(sub),
+            pipe: match self.pipe {
+                None => None,
+                Some(p) => Some(p.apply(sub)),
+            },
+            retn: self.retn.apply(sub),
+        }
     }
 }
 
