@@ -106,16 +106,7 @@ impl fmt::Display for Const {
 // with the substitution equating the two types.
 //
 trait Unifiable {
-    fn unify(self, with: Self, cons: Const) -> Result<(Subst, Const), UnifyError>;
-}
-
-#[derive(Debug)]
-struct UnifyError(MonoType, MonoType);
-
-impl fmt::Display for UnifyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "cannot unify {} with {}", self.0, self.1)
-    }
+    fn unify(self, with: Self, cons: Const) -> Result;
 }
 
 // Types may be constrained with Kinds.
@@ -125,15 +116,23 @@ impl fmt::Display for UnifyError {
 // a type class or family.
 //
 trait Constrainable {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError>;
+    fn constrain(self, with: Kind, cons: Const) -> Result;
 }
 
-#[derive(Debug)]
-struct KindError(MonoType, Kind);
+type Result = result::Result<(Subst, Const), Error>;
 
-impl fmt::Display for KindError {
+#[derive(Debug)]
+enum Error {
+    Constrain { t: MonoType, with: Kind },
+    Unify { t: MonoType, with: MonoType },
+}
+
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} is not of kind {}", self.0, self.1)
+        match self {
+            Error::Constrain { t, with } => write!(f, "{} is not of kind {}", t, with),
+            Error::Unify { t, with } => write!(f, "cannot unify {} with {}", t, with),
+        }
     }
 }
 
@@ -217,7 +216,7 @@ impl Substitutable for MonoType {
 }
 
 impl Unifiable for MonoType {
-    fn unify(self, with: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, with: Self, cons: Const) -> Result {
         match self {
             MonoType::Bool(t) => {
                 if let MonoType::Var(tv) = with {
@@ -225,7 +224,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Bool(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::Int(t) => {
@@ -234,7 +233,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Int(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::Uint(t) => {
@@ -243,7 +242,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Uint(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::Float(t) => {
@@ -252,7 +251,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Float(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::String(t) => {
@@ -261,7 +260,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::String(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::Duration(t) => {
@@ -270,7 +269,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Duration(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::Time(t) => {
@@ -279,7 +278,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Time(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::Regexp(t) => {
@@ -288,7 +287,7 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Regexp(s) = with {
                     t.unify(s, cons)
                 } else {
-                    Err(UnifyError(self, with))
+                    Err(Error::Unify { t: self, with })
                 }
             }
             MonoType::Arr(t) => {
@@ -297,7 +296,10 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Arr(arr) = with {
                     t.unify(*arr, cons)
                 } else {
-                    Err(UnifyError(MonoType::Arr(t), with))
+                    Err(Error::Unify {
+                        t: MonoType::Arr(t),
+                        with,
+                    })
                 }
             }
             MonoType::Row(t) => {
@@ -306,7 +308,10 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Row(obj) = with {
                     t.unify(*obj, cons)
                 } else {
-                    Err(UnifyError(MonoType::Row(t), with))
+                    Err(Error::Unify {
+                        t: MonoType::Row(t),
+                        with,
+                    })
                 }
             }
             MonoType::Fun(t) => {
@@ -315,7 +320,10 @@ impl Unifiable for MonoType {
                 } else if let MonoType::Fun(fun) = with {
                     t.unify(*fun, cons)
                 } else {
-                    Err(UnifyError(MonoType::Fun(t), with))
+                    Err(Error::Unify {
+                        t: MonoType::Fun(t),
+                        with,
+                    })
                 }
             }
             MonoType::Var(t) => t.unify(with, cons),
@@ -324,7 +332,7 @@ impl Unifiable for MonoType {
 }
 
 impl Constrainable for MonoType {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match self {
             MonoType::Bool(t) => t.constrain(with, cons),
             MonoType::Int(t) => t.constrain(with, cons),
@@ -358,16 +366,19 @@ impl Substitutable for Bool {
 }
 
 impl Unifiable for Bool {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Bool {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match with {
             Kind::Equatable | Kind::Nullable => Ok((Subst::empty(), cons)),
-            _ => Err(KindError(MonoType::Bool(self), with)),
+            _ => Err(Error::Constrain {
+                t: MonoType::Bool(self),
+                with,
+            }),
         }
     }
 }
@@ -388,13 +399,13 @@ impl Substitutable for Int {
 }
 
 impl Unifiable for Int {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Int {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match with {
             Kind::Addable
             | Kind::Subtractable
@@ -422,20 +433,23 @@ impl Substitutable for Uint {
 }
 
 impl Unifiable for Uint {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Uint {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match with {
             Kind::Addable
             | Kind::Divisible
             | Kind::Comparable
             | Kind::Equatable
             | Kind::Nullable => Ok((Subst::empty(), cons)),
-            _ => Err(KindError(MonoType::Uint(self), with)),
+            _ => Err(Error::Constrain {
+                t: MonoType::Uint(self),
+                with,
+            }),
         }
     }
 }
@@ -456,13 +470,13 @@ impl Substitutable for Float {
 }
 
 impl Unifiable for Float {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Float {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match with {
             Kind::Addable
             | Kind::Subtractable
@@ -490,18 +504,21 @@ impl Substitutable for Str {
 }
 
 impl Unifiable for Str {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Str {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match with {
             Kind::Addable | Kind::Comparable | Kind::Equatable | Kind::Nullable => {
                 Ok((Subst::empty(), cons))
             }
-            _ => Err(KindError(MonoType::String(self), with)),
+            _ => Err(Error::Constrain {
+                t: MonoType::String(self),
+                with,
+            }),
         }
     }
 }
@@ -522,16 +539,19 @@ impl Substitutable for Duration {
 }
 
 impl Unifiable for Duration {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Duration {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match with {
             Kind::Comparable | Kind::Equatable | Kind::Nullable => Ok((Subst::empty(), cons)),
-            _ => Err(KindError(MonoType::Duration(self), with)),
+            _ => Err(Error::Constrain {
+                t: MonoType::Duration(self),
+                with,
+            }),
         }
     }
 }
@@ -552,16 +572,19 @@ impl Substitutable for Time {
 }
 
 impl Unifiable for Time {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Time {
-    fn constrain(self, with: Kind, cons: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, with: Kind, cons: Const) -> Result {
         match with {
             Kind::Comparable | Kind::Equatable | Kind::Nullable => Ok((Subst::empty(), cons)),
-            _ => Err(KindError(MonoType::Time(self), with)),
+            _ => Err(Error::Constrain {
+                t: MonoType::Time(self),
+                with,
+            }),
         }
     }
 }
@@ -582,14 +605,17 @@ impl Substitutable for Regexp {
 }
 
 impl Unifiable for Regexp {
-    fn unify(self, _: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, cons: Const) -> Result {
         Ok((Subst::empty(), cons))
     }
 }
 
 impl Constrainable for Regexp {
-    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
-        Err(KindError(MonoType::Regexp(self), with))
+    fn constrain(self, with: Kind, _: Const) -> Result {
+        Err(Error::Constrain {
+            t: MonoType::Regexp(self),
+            with,
+        })
     }
 }
 
@@ -605,7 +631,7 @@ impl fmt::Display for Tvar {
 }
 
 impl Constrainable for Tvar {
-    fn constrain(self, _: Kind, _: Const) -> Result<(Subst, Const), KindError> {
+    fn constrain(self, _: Kind, _: Const) -> Result {
         unimplemented!();
     }
 }
@@ -618,7 +644,7 @@ impl Tvar {
         }
     }
 
-    fn unify(self, _: MonoType, _: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: MonoType, _: Const) -> Result {
         unimplemented!();
     }
 }
@@ -640,14 +666,17 @@ impl Substitutable for Array {
 }
 
 impl Unifiable for Array {
-    fn unify(self, with: Self, cons: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, with: Self, cons: Const) -> Result {
         self.0.unify(with.0, cons)
     }
 }
 
 impl Constrainable for Box<Array> {
-    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
-        Err(KindError(MonoType::Arr(self), with))
+    fn constrain(self, with: Kind, _: Const) -> Result {
+        Err(Error::Constrain {
+            t: MonoType::Arr(self),
+            with,
+        })
     }
 }
 
@@ -695,14 +724,17 @@ impl Substitutable for Row {
 }
 
 impl Unifiable for Row {
-    fn unify(self, _: Self, _: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, _: Const) -> Result {
         unimplemented!();
     }
 }
 
 impl Constrainable for Box<Row> {
-    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
-        Err(KindError(MonoType::Row(self), with))
+    fn constrain(self, with: Kind, _: Const) -> Result {
+        Err(Error::Constrain {
+            t: MonoType::Row(self),
+            with,
+        })
     }
 }
 
@@ -851,14 +883,17 @@ impl Substitutable for Function {
 }
 
 impl Unifiable for Function {
-    fn unify(self, _: Self, _: Const) -> Result<(Subst, Const), UnifyError> {
+    fn unify(self, _: Self, _: Const) -> Result {
         unimplemented!();
     }
 }
 
 impl Constrainable for Box<Function> {
-    fn constrain(self, with: Kind, _: Const) -> Result<(Subst, Const), KindError> {
-        Err(KindError(MonoType::Fun(self), with))
+    fn constrain(self, with: Kind, _: Const) -> Result {
+        Err(Error::Constrain {
+            t: MonoType::Fun(self),
+            with,
+        })
     }
 }
 
