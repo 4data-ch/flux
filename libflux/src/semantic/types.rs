@@ -1,8 +1,8 @@
 use crate::semantic::sub::{Subst, Substitutable};
 use std::{
     cmp,
-    collections::{HashMap, HashSet},
-    fmt,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    fmt, result,
 };
 
 // PolyType represents a generic parametrized type.
@@ -61,38 +61,39 @@ pub struct Const {
 
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut cons: Vec<_> = self.kinds.iter().collect();
-        cons.sort_by(|a, b| a.0.cmp(b.0));
-
-        let mut first = true;
-        for (tv, kinds) in cons {
-            let mut k: Vec<_> = kinds.iter().collect();
-            k.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
-
-            if first {
-                write!(
-                    f,
-                    "{}:{}",
-                    tv,
-                    DisplayList {
-                        values: k,
-                        delim: " + ",
-                    }
-                )?;
-                first = false;
-            } else {
-                write!(
-                    f,
-                    ", {}:{}",
-                    tv,
-                    DisplayList {
-                        values: k,
-                        delim: " + ",
-                    }
-                )?;
-            }
+        DisplayList {
+            values: self
+                .kinds
+                .iter()
+                .collect::<BTreeMap<_, _>>()
+                .iter()
+                .map(|(&tv, &kinds)| TvarConst { tv, kinds })
+                .collect(),
+            delim: ", ",
         }
-        Ok(())
+        .fmt(f)
+    }
+}
+
+// Private struct whose sole purpose is for displaying the generic
+// constraints for the free variables of a polytype.
+#[derive(Debug)]
+struct TvarConst<'a> {
+    tv: &'a Tvar,
+    kinds: &'a HashSet<Kind>,
+}
+
+impl<'a> fmt::Display for TvarConst<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}",
+            self.tv,
+            DisplayList {
+                values: self.kinds.iter().collect::<BTreeSet<_>>().iter().collect(),
+                delim: " + ",
+            },
+        )
     }
 }
 
@@ -157,6 +158,18 @@ impl fmt::Display for Kind {
             Kind::Equatable => f.write_str("Equatable"),
             Kind::Nullable => f.write_str("Nullable"),
         }
+    }
+}
+
+impl cmp::Ord for Kind {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.to_string().cmp(&other.to_string())
+    }
+}
+
+impl cmp::PartialOrd for Kind {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -808,50 +821,53 @@ pub struct Function {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut req: Vec<_> = self
+        let required = self
             .req
             .iter()
-            .map(|(k, v)| Property {
-                k: k.to_string(),
+            .collect::<BTreeMap<_, _>>()
+            .iter()
+            .map(|(&k, &v)| Property {
+                k: k.clone(),
                 v: v.clone(),
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        req.sort_by(|a, b| a.k.cmp(&b.k));
-
-        let mut opt: Vec<_> = self
+        let optional = self
             .opt
             .iter()
-            .map(|(k, v)| Property {
+            .collect::<BTreeMap<_, _>>()
+            .iter()
+            .map(|(&k, &v)| Property {
                 k: String::from("?") + &k,
                 v: v.clone(),
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        opt.sort_by(|a, b| a.k.cmp(&b.k));
-
-        let mut args = Vec::with_capacity(req.len() + opt.len());
-
-        if let Some(pipe) = &self.pipe {
-            if pipe.k == "<-" {
-                args.push(pipe.clone());
-            } else {
-                args.push(Property {
-                    k: String::from("<-") + &pipe.k,
-                    v: pipe.v.clone(),
-                });
+        let pipe = match &self.pipe {
+            Some(pipe) => {
+                if pipe.k == "<-" {
+                    vec![pipe.clone()]
+                } else {
+                    vec![Property {
+                        k: String::from("<-") + &pipe.k,
+                        v: pipe.v.clone(),
+                    }]
+                }
             }
-        }
+            None => vec![],
+        };
 
-        args.append(&mut req);
-        args.append(&mut opt);
+        let values = pipe
+            .iter()
+            .chain(required.iter().chain(optional.iter()))
+            .collect();
 
         write!(
             f,
             "({}) -> {}",
             DisplayList {
-                values: args,
-                delim: ", "
+                values: values,
+                delim: ", ",
             },
             self.retn
         )
